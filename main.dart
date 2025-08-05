@@ -1,219 +1,261 @@
 import 'package:flutter/material.dart';
-import 'package:path/path.dart';
-import 'package:sqflite/sqflite.dart';
-import 'package:table_calendar/table_calendar.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+class Home extends StatefulWidget {
+  const Home({super.key});
 
-void main() {
-  runApp(MyApp());
-}
 
-class Task {
-  final int? id;
-  final String title;
-  final bool isDone;
-  final String date;
-
-  Task({this.id, required this.title, required this.isDone, required this.date});
-
-  Map<String, dynamic> toMap() {
-    return {
-      'id': id,
-      'title': title,
-      'isDone': isDone ? 1 : 0,
-      'date': date,
-    };
-  }
-
-  factory Task.fromMap(Map<String, dynamic> map) {
-    return Task(
-      id: map['id'],
-      title: map['title'],
-      isDone: map['isDone'] == 1,
-      date: map['date'],
-    );
-  }
-}
-
-class DatabaseHelper {
-  static final DatabaseHelper instance = DatabaseHelper._init();
-
-  static Database? _database;
-  DatabaseHelper._init();
-
-  Future<Database> get database async {
-    if (_database != null) return _database!;
-    _database = await _initDB('tasks.db');
-    return _database!;
-  }
-
-  Future<Database> _initDB(String filePath) async {
-    final dbPath = await getDatabasesPath();
-    final path = join(dbPath, filePath);
-    return await openDatabase(path, version: 1, onCreate: _createDB);
-  }
-
-  Future _createDB(Database db, int version) async {
-    await db.execute('''
-      CREATE TABLE tasks (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT,
-        isDone INTEGER,
-        date TEXT
-      )
-    ''');
-  }
-
-  Future<void> insertTask(Task task) async {
-    final db = await instance.database;
-    await db.insert('tasks', task.toMap());
-  }
-
-  Future<List<Task>> getTasksByDate(String date) async {
-    final db = await instance.database;
-    final result = await db.query('tasks', where: 'date = ?', whereArgs: [date]);
-    return result.map((e) => Task.fromMap(e)).toList();
-  }
-
-  Future<void> updateTask(Task task) async {
-    final db = await instance.database;
-    await db.update('tasks', task.toMap(), where: 'id = ?', whereArgs: [task.id]);
-  }
-
-  Future<Map<String, List<Task>>> getAllTasks() async {
-    final db = await instance.database;
-    final result = await db.query('tasks');
-    Map<String, List<Task>> data = {};
-    for (var row in result) {
-      final task = Task.fromMap(row);
-      data.putIfAbsent(task.date, () => []).add(task);
-    }
-    return data;
-  }
-}
-
-class MyApp extends StatefulWidget {
   @override
-  State<MyApp> createState() => _MyAppState();
+  State<Home> createState() => _HomeState();
 }
 
-class _MyAppState extends State<MyApp> {
-  late Map<DateTime, List<Task>> _tasks;
-  DateTime _focusedDay = DateTime.now();
-  DateTime _selectedDay = DateTime.now();
-  List<Task> _selectedTasks = [];
-  final _controller = TextEditingController();
+class _HomeState extends State<Home> {
+  final myTasks = Hive.box('mytasks');
+ Map tasks =<String , bool>{
+   
+ };
+ List<String> filterOptions = ['All Tasks', 'Completed', 'Pending'];
+ String selectedFilter = 'All Tasks';
 
+  final taskcontroller = TextEditingController();
+  final edittaskcontroller = TextEditingController();
+   
+  bool _showtextfield = false;
+
+  @override
+  void dispose() {
+      taskcontroller.dispose();
+      edittaskcontroller.dispose();
+      super.dispose();          
+      }
   @override
   void initState() {
-    super.initState();
-    _loadTasks();
-  }
+  super.initState();
+  final savedTasks = myTasks.toMap().cast<String, bool>();
+  tasks.addAll(savedTasks);
+}
 
-  Future<void> _loadTasks() async {
-    final allTasks = await DatabaseHelper.instance.getAllTasks();
-    setState(() {
-      _tasks = {};
-      allTasks.forEach((dateStr, tasks) {
-        final date = DateTime.parse(dateStr);
-        _tasks[date] = tasks;
-      });
-      _selectedTasks = _tasks[_selectedDay] ?? [];
-    });
-  }
-
-  Future<void> _addTask(String title) async {
-    final task = Task(title: title, isDone: false, date: _selectedDay.toIso8601String().split("T")[0]);
-    await DatabaseHelper.instance.insertTask(task);
-    _controller.clear();
-    await _loadTasks();
-  }
-
-  Future<void> _toggleTask(Task task) async {
-    final updated = Task(id: task.id, title: task.title, isDone: !task.isDone, date: task.date);
-    await DatabaseHelper.instance.updateTask(updated);
-    await _loadTasks();
-  }
-
-  Color _getDayColor(DateTime day) {
-    final tasks = _tasks[day] ?? [];
-    if (tasks.isEmpty) return Colors.transparent;
-    final completed = tasks.where((t) => t.isDone).length;
-    final ratio = completed / tasks.length;
-    return Color.lerp(Colors.green[100], Colors.green[900], ratio)!;
-  }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(title: const Text('Todo Calendar')),
-        body: Column(
-          children: [
-            TableCalendar(
-              firstDay: DateTime.utc(2020, 1, 1),
-              lastDay: DateTime.utc(2030, 12, 31),
-              focusedDay: _focusedDay,
-              selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
-              calendarBuilders: CalendarBuilders(
-                defaultBuilder: (context, day, _) {
-                  final color = _getDayColor(day);
-                  return Container(
-                    margin: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(
-                      color: color,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text('${day.day}'),
-                  );
+     final taskkeys = tasks.keys.toList();
+     
+    return Scaffold(
+      appBar: AppBar(
+        title: Padding(
+          padding: const EdgeInsets.all(10.0),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text('TO-DO APP', style: TextStyle(
+                fontSize: 25,
+                fontWeight: FontWeight.bold
+              ),),
+              
+            SizedBox(width: 20,),
+            IconButton(onPressed: (){
+              showDialog(context: context, builder:(context){
+                return AlertDialog(
+                  title: Text('Delete all tasks!'),
+                  actions: [  
+                    OutlinedButton(onPressed: (){
+                      final deletedTasks = Map<String, bool>.from(tasks);
+                      setState(() {
+                        tasks.clear();
+                        myTasks.clear();
+                      });
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text('Task deleted'),
+                              action: SnackBarAction(label: 'Undo', onPressed: () {
+                                setState(() {
+                                  tasks = Map<String, bool>.from(deletedTasks); 
+                                });
+                              }),
+                              )
+                             );
+                    }, child: Text('Yes')),
+                    OutlinedButton(onPressed: (){
+                      Navigator.pop(context);
+                    }, child: Text('No'))
+                  ],
+                );
+              });
+            }, icon: Icon(Icons.delete_forever_sharp)),
+            DropdownButton(
+                value: selectedFilter,
+                items: filterOptions.map((option){
+                  return DropdownMenuItem(value:option,child: Text(option),);
+                }).toList(),
+                onChanged: (value) {
+                    setState(() {
+                      selectedFilter = value!;
+                    });
                 },
               ),
-              onDaySelected: (selectedDay, focusedDay) {
-                setState(() {
-                  _selectedDay = selectedDay;
-                  _focusedDay = focusedDay;
-                  _selectedTasks = _tasks[_selectedDay] ?? [];
-                });
-              },
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(controller: _controller, decoration: const InputDecoration(hintText: 'New task')),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add),
-                    onPressed: () => _addTask(_controller.text),
-                  )
-                ],
-              ),
-            ),
-            Expanded(
+          ],),
+        ),
+        backgroundColor: Colors.amberAccent,
+      ),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          
+        Builder(
+          builder: (context) {
+            final filteredTaskKeys = tasks.keys.where((key) {
+                        if (selectedFilter == 'All Tasks') return true;
+                        if (selectedFilter == 'Completed') return tasks[key] == true;
+                        if (selectedFilter == 'Pending') return tasks[key] == false;
+                        return true;
+                      }).toList();
+        
+            return Expanded(
               child: ListView.builder(
-                itemCount: _selectedTasks.length,
+                itemCount: filteredTaskKeys.length,
                 itemBuilder: (context, index) {
-                  final task = _selectedTasks[index];
-                  return ListTile(
-                    title: Text(
-                      task.title,
-                      style: TextStyle(
-                        decoration: task.isDone ? TextDecoration.lineThrough : null,
-                        color: task.isDone ? Colors.grey : Colors.black,
+                  
+
+                  final taskName = filteredTaskKeys[index];
+                  return Slidable(
+                    endActionPane: ActionPane(motion: StretchMotion(), children: [
+                      SlidableAction(
+                        onPressed: (context) {
+                          final taskName = filteredTaskKeys[index];
+                          final deletedTaskName = taskName;
+                          final deletedTaskStatus = tasks[taskName];
+                          setState(() {
+                            tasks.remove(taskName);
+                            myTasks.delete(taskName);
+                          });
+                           ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Task deleted'),
+                            action: SnackBarAction(label: 'Undo', onPressed: () {
+                              setState(() {
+                                tasks[deletedTaskName] = deletedTaskStatus!; 
+                              });
+                            }),
+                            )
+                           );
+                        },
+                        icon: Icons.delete,
+                        backgroundColor: Colors.red,
+                        borderRadius: BorderRadius.circular(12),
+                      )
+                    ]),
+                    child: GestureDetector(
+                      onLongPress: (){
+                        edittaskcontroller.text = taskName;
+                        showDialog(context: context, builder: (context) {
+                          return AlertDialog(
+                            title: Text('Edit task'),
+                            content: TextField(
+                              controller: edittaskcontroller,
+                              autocorrect: true,
+                              autofocus: true,
+                              decoration: InputDecoration(
+                                hintText: 'Enter New Task',
+                              ),
+                            ),
+                            actions: [
+                              OutlinedButton(onPressed: () {
+                               final newTask = edittaskcontroller.text.trim();
+
+                               if (newTask.isNotEmpty && !tasks.containsKey(newTask)){
+                                final value = tasks[taskName];
+                                setState(() {
+                                  tasks.remove(taskName);
+                                  tasks[newTask] = value;
+                                  myTasks.delete(taskName);
+                                  myTasks.put(newTask, value);
+                                  
+                                });
+                                Navigator.pop(context);
+                               }
+                              }, child: Text('Save')),
+                              OutlinedButton(onPressed: (){
+                                Navigator.pop(context);
+                              }, child:Text('Cancel',
+                              ),)
+                            ],
+                          );
+                        });
+                      },
+                      child: CheckboxListTile(
+                        value: tasks[taskName],
+                        controlAffinity: ListTileControlAffinity.leading,
+                        activeColor: Colors.amber[200],
+                        onChanged: (bool? status) {
+                          setState(() {
+                            tasks[taskName] = status!;
+                            myTasks.put(taskName, status);
+                          });
+                        },
+                        title: Text(
+                          taskName,
+                          style: TextStyle(
+                            fontSize: 18,
+                            decoration: tasks[taskName]! ? TextDecoration.lineThrough : null,
+                          )
+                            ),),
+                    ),
+                  ); },
+              ),
+            );
+          },
+        ),
+       if(_showtextfield)
+         Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: TextField(
+                      autofocus: true,
+                      autocorrect: true,
+                      controller: taskcontroller,
+                      decoration: InputDecoration(
+                        hintText:'Add Task',
+                        border: OutlineInputBorder(),
+                        suffixIcon: Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          mainAxisSize: MainAxisSize.min,
+                          children:[IconButton(onPressed: (){
+                            setState(() {
+                              if (taskcontroller.text.trim().isNotEmpty) {
+                             String newTask = taskcontroller.text.trim();
+                             tasks[newTask] = false;
+                             myTasks.put(newTask, false);
+                              taskcontroller.clear();
+                              _showtextfield = false;
+                        }
+                            });
+                          }, icon: Icon(Icons.check)),
+          
+                            IconButton(onPressed: 
+                          () {
+                            taskcontroller.clear();
+                          }, icon: Icon(Icons.clear)),
+                          ]
+                        )
                       ),
                     ),
-                    trailing: Checkbox(
-                      value: task.isDone,
-                      onChanged: (_) => _toggleTask(task),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
         ),
-      ),
-    );
-  }
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                fixedSize: Size.fromHeight(25),
+                backgroundColor: Colors.amber,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)
+                ),
+              ),
+              onPressed:() {
+                setState(() {
+                  _showtextfield = true;
+                });
+            },
+            child: Icon(Icons.add, color: Colors.grey[600],size: 20,),),
+          )
+  ])
+  );}
 }
